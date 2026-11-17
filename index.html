@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Danfo Hustle: Lagos</title>
+<style>
+:root{--bg:#f4f1ea;--fg:#1c1c1c;--card:#fff;--accent:#d62828;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15161a;--fg:#f2f2f2;--card:#22242b;--accent:#ff4d4d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#15161a;--fg:#f2f2f2;--card:#22242b;--accent:#ff4d4d;color-scheme:dark}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
+#hud{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;font-weight:600;font-size:15px}
+#hud span{background:var(--card);padding:6px 12px;border-radius:8px}
+#wrap{position:relative;max-width:96vw}
+canvas{display:block;max-width:96vw;max-height:62vh;border-radius:14px;touch-action:none}
+#ov{position:absolute;inset:0;background:rgba(20,20,20,.82);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;padding:12px;border-radius:14px;overflow:auto}
+#ov h2{margin:0;font-size:26px}#ov p{margin:0;max-width:520px;font-size:15px}
+#ov button{border:0;border-radius:10px;padding:10px 16px;font-size:15px;font-weight:600;background:var(--accent);color:#fff;cursor:pointer}
+#ov button:disabled{opacity:.45;cursor:default}
+#shop{display:flex;flex-direction:column;gap:6px}
+#pad{display:none;gap:10px}
+#pad button{width:70px;height:56px;font-size:22px;border:0;border-radius:12px;background:var(--accent);color:#fff;touch-action:none}
+@media (pointer:coarse){#pad{display:flex}}
+</style>
+</head>
+<body>
+<div id="hud"><span id="bank"></span><span id="time"></span><span id="fuel"></span><span id="ride"></span></div>
+<div id="wrap"><canvas id="c" width="800" height="520"></canvas><div id="ov"></div></div>
+<div id="pad"><button data-k="arrowleft">◀</button><button data-k="arrowup">▲</button><button data-k="arrowdown">▼</button><button data-k="arrowright">▶</button><button data-k="honk">📯</button></div>
+<script>
+const c=document.getElementById('c'),x=c.getContext('2d'),ov=document.getElementById('ov');
+const VW=800,VH=520,G=600,RW=110,N=5,MAP=G*N,R=Math.random;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+let S=null;try{S=JSON.parse(localStorage.getItem('kh'))}catch(e){}
+let bank=(S&&S.bank)||0,up=(S&&S.up)||{spd:0,hdl:0,tip:0};
+function save(){try{localStorage.setItem('kh',JSON.stringify({bank,up}))}catch(e){}}
+const places=['Ojuelegba','Yaba','Ikeja Under Bridge','Oshodi','Lekki Phase 1','Obalende','Surulere','Mile 12','Third Mainland','Apapa'];
+const ads=['MAMA PUT: JOLLOF DAILY','CHIN-CHIN CRUNCH SNACKS','NAIJA PHONE REPAIRS','YOUR ADVERT HERE','ADVERTISE: DM THE DEV'];const defs=[['spd','Engine: higher top speed'],['hdl','Steering: sharper turns'],['tip','Seat cushions: +25% fares']];
+const keys={};const FMAX=60,stations=[{x:2*G,y:2.5*G},{x:4*G,y:1.5*G},{x:G,y:4.5*G}];let hn=0,rain=false,hold=0,fuel=FMAX,state='menu',car={x:G,y:G,a:0,v:0,has:false},pass=null,dest=null,destName='',fare=0,rideT=0,shiftT=0,msg='',msgT=0,cd=0,pcd=0,rides=0,earn=0,last=0,ovT='',ovX='';
+function roadPt(){const k=Math.floor(R()*(N+1))*G,t=100+R()*(MAP-200);return R()<.5?{x:k,y:t}:{x:t,y:k}}
+function road(px,py){if(px<-RW/2||py<-RW/2||px>MAP+RW/2||py>MAP+RW/2)return false;const a=(px%G+G)%G,b=(py%G+G)%G,h=RW/2;return a<h||a>G-h||b<h||b>G-h}
+const holes=[];for(let i=0;i<45;i++){const p=roadPt();holes.push({x:p.x+(R()-.5)*60,y:p.y+(R()-.5)*60})}
+const cols=['#d62828','#f1f1f1','#222','#f77f00','#8d0801'];
+const traffic=[];for(let i=0;i<20;i++){traffic.push({h:R()<.5,k:Math.floor(R()*(N+1))*G,d:R()<.5?1:-1,p:R()*MAP,s:60+R()*50,col:cols[i%5],ty:[0,0,0,1,1,2,2,3,4][i%9],x:0,y:0})}
+function pos(t){if(t.h){t.x=t.p;t.y=t.k+t.d*RW/4}else{t.y=t.p;t.x=t.k-t.d*RW/4}}
+traffic.forEach(pos);const walkers=[];for(let i=0;i<40;i++){walkers.push({h:R()<.5,k:Math.floor(R()*(N+1))*G,sd:R()<.5?1:-1,p:R()*MAP,s:12+R()*10,d:R()<.5?1:-1,c:['#c1121f','#f77f00','#2a9d8f','#e9c46a','#7b2cbf','#fff'][i%6],sk:['#8d5524','#5a3825','#c68642','#3b2219'][i%4],x:0,y:0})}function wpos(w){if(w.h){w.x=w.p;w.y=w.k+w.sd*60}else{w.y=w.p;w.x=w.k+w.sd*60}}walkers.forEach(wpos);const hawkers=[];for(let i=0;i<14;i++){const p=roadPt();hawkers.push({x:p.x+(R()<.5?60:-60)*(p.x%G===0?1:0),y:p.y+(R()<.5?60:-60)*(p.y%G===0?1:0),cd:0})}const shoppers=[];for(let i=0;i<N;i++)for(let j=0;j<N;j++)if((i*3+j*5)%4===1)for(let k=0;k<5;k++)shoppers.push({x:i*G+65+30+(k%3)*110+87,y0:j*G+65+40,h:290,p:R()*290,d:R()<.5?1:-1,s:20+R()*15,c:['#c1121f','#f77f00','#2a9d8f','#e9c46a','#7b2cbf','#fff'][k%6],sk:['#8d5524','#5a3825','#c68642','#3b2219'][k%4]});
+function spawnPass(){let p;do{p=roadPt()}while(Math.hypot(p.x-car.x,p.y-car.y)<350);pass=p;car.has=false;dest=null}
+function say(m){msg=m;msgT=2.5}function tapTurn(d){if(state==='run')car.tgt=Math.round(car.a/(Math.PI/2))*(Math.PI/2)+d*Math.PI/2}
+function veh(ty,col){if(ty===0){x.fillStyle='#f4c20d';x.fillRect(-26,-11,52,22);x.fillStyle='#111';x.fillRect(-26,-11,52,4);x.fillRect(-26,7,52,4);x.fillStyle='#333';x.fillRect(17,-8,7,16)}else if(ty===1){x.fillStyle='#f4c20d';x.fillRect(-15,-9,30,18);x.fillStyle='#1b7a3a';x.fillRect(-13,-9,18,18);x.fillStyle='#222';x.fillRect(11,-6,4,12)}else if(ty===2){x.fillStyle=col;x.fillRect(-19,-10,38,20);x.fillStyle='rgba(255,255,255,.65)';x.fillRect(3,-8,9,16);x.fillRect(-14,-8,6,16)}else if(ty===3){x.fillStyle='#c1121f';x.fillRect(-32,-12,64,24);x.fillStyle='rgba(255,255,255,.75)';for(let k=-26;k<22;k+=11)x.fillRect(k,-8,8,16);x.fillStyle='#333';x.fillRect(26,-9,5,18)}else{x.fillStyle='#111';x.fillRect(-11,-4,22,8);x.fillStyle=col;x.fillRect(-3,-6,6,12);x.fillStyle='#e0ac69';x.beginPath();x.arc(0,0,5,0,7);x.fill()}}let AC=null;function honk(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const o=AC.createOscillator(),g=AC.createGain();o.type='square';o.frequency.value=330;g.gain.value=.05;o.connect(g);g.connect(AC.destination);o.start();o.stop(AC.currentTime+.18)}catch(e){}}function cost(k){return 1500*(up[k]+1)}
+function render(){
+  ov.innerHTML='<h2>'+ovT+'</h2><p>'+ovX+'</p><p><b>Bank: ₦'+bank.toLocaleString()+'</b></p><div id="shop">'+
+  defs.map(d=>{const k=d[0],mx=up[k]>=4;return '<button data-k="'+k+'" '+(mx||bank<cost(k)?'disabled':'')+'>'+d[1]+' (Lv '+up[k]+') — '+(mx?'MAX':'₦'+cost(k).toLocaleString())+'</button>'}).join('')+
+  '</div><button id="go">'+(state==='menu'?'Start shift':'Next shift')+'</button>';
+}
+function showOv(t,tx){ovT=t;ovX=tx;ov.style.display='flex';render()}
+ov.onclick=e=>{const k=e.target.dataset.k;if(k&&bank>=cost(k)&&up[k]<4){bank-=cost(k);up[k]++;save();render()}if(e.target.id==='go')startShift()};
+function startShift(){car={x:G,y:G,a:0,v:0,has:false};shiftT=150;fuel=FMAX;rain=R()<.5;if(rain)say('Rain! Roads are slippery');earn=0;rides=0;spawnPass();ov.style.display='none';state='run';last=performance.now()}
+function endShift(){state='over';save();showOv('Shift over!','You earned ₦'+earn.toLocaleString()+' from '+rides+' ride'+(rides===1?'':'s')+'. Spend it on upgrades, then hit the road again.')}
+addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=1;const k=e.key.toLowerCase();if(!e.repeat){if(k==='h'||k===' ')honk();if(k==='arrowleft'||k==='a')tapTurn(-1);if(k==='arrowright'||k==='d')tapTurn(1)}if(e.key.startsWith('Arrow')||e.key===' ')e.preventDefault()});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=0);
+document.querySelectorAll('#pad button').forEach(b=>{const m=b.dataset.k,on=e=>{e.preventDefault();keys[m]=1;if(m==='arrowleft')tapTurn(-1);if(m==='arrowright')tapTurn(1);if(m==='honk')honk()},off=e=>{e.preventDefault();keys[m]=0};
+  b.addEventListener('pointerdown',on);b.addEventListener('pointerup',off);b.addEventListener('pointerleave',off)});
+function upd(dt){
+  const mx=(230+25*up.spd)*(road(car.x,car.y)?1:.35)*(fuel>0?1:.12),acc=220+20*up.spd;
+  const u=keys.arrowup||keys.w,d=keys.arrowdown||keys.s,l=keys.arrowleft||keys.a,r=keys.arrowright||keys.d;
+  if(u)car.v+=acc*dt;else if(d)car.v-=acc*dt;else car.v*=Math.pow(.4,dt);
+  if(car.v>mx)car.v=Math.max(mx,car.v-400*dt);
+  car.v=Math.max(-80,car.v);
+  hold=(l||r)?hold+dt:0;if(car.tgt!=null){const df=car.tgt-car.a,st=(rain?6.5:9)*dt;if(Math.abs(df)<=st){car.a=car.tgt;car.tgt=null}else car.a+=Math.sign(df)*st}else if(hold>.25)car.a+=((r?1:0)-(l?1:0))*(3.8+.4*up.hdl)*(rain?.75:1)*dt*clamp(car.v/40,-1,1);
+  car.x=clamp(car.x+Math.cos(car.a)*car.v*dt,-300,MAP+300);car.y=clamp(car.y+Math.sin(car.a)*car.v*dt,-300,MAP+300);
+  cd-=dt;pcd-=dt;msgT-=dt;shiftT-=dt;hn-=dt;shoppers.forEach(s=>{s.p+=s.d*s.s*dt;if(s.p>s.h){s.p=s.h;s.d=-1}if(s.p<0){s.p=0;s.d=1}});hawkers.forEach(h=>{h.cd-=dt;if(car.has&&car.v<90&&h.cd<=0&&Math.hypot(h.x-car.x,h.y-car.y)<60){h.cd=25;bank+=150;earn+=150;say('Hawker sold your passenger snacks: +₦150')}});walkers.forEach(w=>{w.p+=w.d*w.s*dt;if(w.p>MAP+60)w.p=-60;if(w.p<-60)w.p=MAP+60;wpos(w)});fuel=Math.max(0,fuel-Math.abs(car.v)/260*.6*dt);stations.forEach(s=>{if(Math.hypot(s.x-car.x,s.y-car.y)<50&&car.v<140&&fuel<FMAX){const pr=bank>=12?12:0,tk=Math.min(FMAX-fuel,40*dt,pr?bank/pr:99);fuel+=tk;bank=Math.max(0,Math.round(bank-tk*pr));say(pr?'Refuelling… ₦12 per unit':'Station gave you a free top-up')}});if(fuel<15&&fuel>0&&msgT<=0)say('Low fuel! Find a ⛽ station');if(fuel<=0&&msgT<=0)say('Out of fuel! Crawl to a ⛽ station');
+  traffic.forEach(t=>{t.p+=t.d*t.s*dt;if(t.p>MAP+100)t.p=-100;if(t.p<-100)t.p=MAP+100;pos(t);if(state==='run'&&hn<=0&&Math.hypot(t.x-car.x,t.y-car.y)<70){hn=2.5+R()*3;honk()}
+    if(cd<=0&&Math.hypot(t.x-car.x,t.y-car.y)<28){cd=1.2;car.v=-40;bank=Math.max(0,bank-200);say('Crash! −₦200')}});
+  if(pcd<=0)holes.forEach(h=>{if(Math.hypot(h.x-car.x,h.y-car.y)<18){pcd=.6;car.v*=.4;say('Pothole!')}});
+  if(!car.has&&pass&&Math.hypot(pass.x-car.x,pass.y-car.y)<80){
+    do{dest=roadPt()}while(Math.hypot(dest.x-pass.x,dest.y-pass.y)<600);
+    const dist=Math.hypot(dest.x-pass.x,dest.y-pass.y);destName=places[Math.floor(R()*places.length)];
+    fare=Math.round(Math.round((100+dist*.8)/50)*50*(1+.25*up.tip));rideT=dist/130+12;car.has=true;pass=null;say('“Oga, carry me go '+destName+'!”')}
+  if(car.has){rideT-=dt;if(Math.hypot(dest.x-car.x,dest.y-car.y)<90){const pay=rideT<0?Math.round(fare/2):fare;bank+=pay;earn+=pay;rides++;save();say((rideT<0?'Late! ':'Paid ')+'₦'+pay.toLocaleString());spawnPass()}}
+  if(shiftT<=0)endShift();
+}
+function draw(){
+  const cx=car.x-VW/2,cy=car.y-VH/2;
+  x.fillStyle='#4a9a3a';x.fillRect(0,0,VW,VH);x.save();x.translate(-cx,-cy);
+  x.fillStyle='#3d3d42';for(let k=0;k<=N;k++){x.fillRect(k*G-RW/2,-RW/2,RW,MAP+RW);x.fillRect(-RW/2,k*G-RW/2,MAP+RW,RW)}
+  x.strokeStyle='#f4d35e';x.lineWidth=3;x.setLineDash([20,20]);x.beginPath();
+  for(let k=0;k<=N;k++){x.moveTo(k*G,0);x.lineTo(k*G,MAP);x.moveTo(0,k*G);x.lineTo(MAP,k*G)}x.stroke();x.setLineDash([]);
+  const hc=['#e76f51','#f4a261','#e9c46a','#d62828','#8d99ae'];
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++){const bx=i*G+RW/2+10,by=j*G+RW/2+10,s=G-RW-20;
+    if(bx>cx+VW||bx+s<cx||by>cy+VH||by+s<cy)continue;
+    x.fillStyle='#c9b98f';x.fillRect(bx,by,s,s);const q=(s-30)/3;
+    if((i*3+j*5)%4===1){x.fillStyle='#b08968';x.fillRect(bx+8,by+8,s-16,s-16);for(let a=0;a<4;a++)for(let b=0;b<3;b++){const sx=bx+30+a*110,sy=by+40+b*110;x.fillStyle='#5a3825';x.fillRect(sx,sy+26,64,26);x.fillStyle=hc[(a+b*2+i+j)%5];x.beginPath();x.arc(sx+32,sy+18,38,Math.PI,0);x.fill();x.fillRect(sx-6,sy+18,76,6);const bb=Math.sin(performance.now()/300+a+b*3)*2;x.fillStyle=hc[(a*3+b+i)%5];x.beginPath();x.arc(sx+32,sy+58+bb,9,0,7);x.fill();x.fillStyle=['#8d5524','#5a3825','#c68642','#3b2219'][(a+b)%4];x.beginPath();x.arc(sx+32,sy+58+bb,5,0,7);x.fill()}}else for(let a=0;a<3;a++)for(let b=0;b<3;b++){const hw=q-12,hx=bx+15+a*q,hy=by+15+b*q;x.fillStyle=hc[(i*7+j*13+a*5+b*3)%5];x.fillRect(hx,hy,hw,hw);x.fillStyle='rgba(0,0,0,.4)';x.fillRect(hx,hy,hw,26);x.fillStyle='#4a2c17';x.fillRect(hx+hw/2-9,hy+hw-30,18,30);x.fillStyle='#ffe8a3';x.fillRect(hx+14,hy+44,22,18);x.fillRect(hx+hw-36,hy+44,22,18);if((a+b+i+j)%2===0){const sb=Math.sin(performance.now()/260+hx+hy)*2;x.fillStyle=hc[(a+b+i+j)%5];x.beginPath();x.arc(hx+hw/2+26,hy+hw-10+sb,8,0,7);x.fill();x.fillStyle=['#8d5524','#5a3825','#c68642','#3b2219'][(a*2+b)%4];x.beginPath();x.arc(hx+hw/2+26,hy+hw-10+sb,4.5,0,7);x.fill();x.fillStyle='#fff';x.font='bold 11px system-ui';x.textAlign='center';x.fillText('SHOP',hx+hw/2,hy+18)}}
+    x.fillStyle='rgba(0,0,0,.6)';x.fillRect(bx+s/2-80,by+s/2-12,160,24);x.fillStyle='#fff';x.font='bold 13px system-ui';x.textAlign='center';x.fillText(places[(i+j*N)%10],bx+s/2,by+s/2+5);if((i+j)%2===0){x.fillStyle='#222';x.fillRect(bx+s/2-92,by+s-46,184,34);x.fillStyle=['#d62828','#f77f00','#1b7a3a'][(i+j)%3];x.fillRect(bx+s/2-88,by+s-42,176,26);x.fillStyle='#fff';x.font='bold 11px system-ui';x.fillText(ads[(i+j)%ads.length],bx+s/2,by+s-24)}}
+  x.fillStyle='#1d1d20';holes.forEach(h=>{x.beginPath();x.ellipse(h.x,h.y,14,10,0,0,7);x.fill()});
+  shoppers.forEach(s=>{const sy=s.y0+s.p;if(Math.abs(s.x-car.x)>520||Math.abs(sy-car.y)>340)return;x.fillStyle=s.c;x.beginPath();x.arc(s.x,sy,6,0,7);x.fill();x.fillStyle=s.sk;x.beginPath();x.arc(s.x,sy,3.5,0,7);x.fill()});hawkers.forEach(h=>{if(Math.abs(h.x-car.x)>520||Math.abs(h.y-car.y)>340)return;x.fillStyle='#e76f51';x.beginPath();x.arc(h.x,h.y,7,0,7);x.fill();x.fillStyle='#5a3825';x.beginPath();x.arc(h.x,h.y,4,0,7);x.fill();x.font='16px system-ui';x.textAlign='center';x.fillText(h.cd>0?'':'🥤',h.x,h.y-12)});walkers.forEach(w=>{if(Math.abs(w.x-car.x)>520||Math.abs(w.y-car.y)>340)return;const b=Math.sin(performance.now()/150+w.p)*1.5;x.fillStyle=w.c;x.beginPath();x.arc(w.x,w.y+b,6,0,7);x.fill();x.fillStyle=w.sk;x.beginPath();x.arc(w.x,w.y+b,3.5,0,7);x.fill()});stations.forEach(s=>{x.fillStyle='rgba(247,127,0,.55)';x.beginPath();x.arc(s.x,s.y,40,0,7);x.fill();x.font='30px system-ui';x.textAlign='center';x.fillStyle='#000';x.fillText('⛽',s.x,s.y+11);x.font='bold 12px system-ui';x.fillStyle='#fff';x.fillText('PETROL',s.x,s.y-46)});const t=car.has?dest:pass;
+  if(pass){const w=Math.sin(performance.now()/180)*6;x.fillStyle='rgba(255,212,0,.45)';x.beginPath();x.arc(pass.x,pass.y,80,0,7);x.fill();x.fillStyle='#c1121f';x.fillRect(pass.x-7,pass.y-2,14,18);x.fillStyle='#8d5524';x.beginPath();x.arc(pass.x,pass.y-9,8,0,7);x.fill();x.strokeStyle='#8d5524';x.lineWidth=4;x.beginPath();x.moveTo(pass.x+7,pass.y);x.lineTo(pass.x+16,pass.y-14+w);x.stroke();x.fillStyle='#fff';x.font='bold 12px system-ui';x.textAlign='center';x.fillText('Danfo!',pass.x,pass.y-24)}
+  if(car.has){x.fillStyle='rgba(46,204,113,.5)';x.beginPath();x.arc(dest.x,dest.y,90,0,7);x.fill();x.font='28px system-ui';x.textAlign='center';x.fillText('🏁',dest.x,dest.y+10)}
+  traffic.forEach(v=>{x.save();x.translate(v.x,v.y);x.rotate(v.h?(v.d>0?0:Math.PI):(v.d>0?Math.PI/2:-Math.PI/2));veh(v.ty,v.col);x.restore()});
+  x.save();x.translate(car.x,car.y);x.rotate(car.a);veh(0,'');x.fillStyle='#fff';x.fillRect(-4,-5,10,10);x.fillStyle='#5a3825';x.beginPath();x.arc(19,-4,5,0,7);x.fill();if(car.has){x.fillStyle='#8d5524';x.beginPath();x.arc(-14,3,5,0,7);x.fill();x.beginPath();x.arc(-22,-4,5,0,7);x.fill()}x.restore();
+  x.restore();
+  if(rain&&state==='run'){x.fillStyle='rgba(20,25,35,.22)';x.fillRect(0,0,VW,VH);x.strokeStyle='rgba(220,230,255,.55)';x.lineWidth=1.5;x.beginPath();const tt=performance.now()/9;for(let i=0;i<70;i++){const rx=(i*97+tt*.6)%VW,ry=(i*53+tt*2.2)%VH;x.moveTo(rx,ry);x.lineTo(rx-4,ry+14)}x.stroke()}if(t&&state==='run'){const sx=t.x-cx,sy=t.y-cy;if(sx<20||sx>VW-20||sy<20||sy>VH-20){x.save();x.translate(clamp(sx,30,VW-30),clamp(sy,30,VH-30));x.rotate(Math.atan2(t.y-car.y,t.x-car.x));x.fillStyle=car.has?'#2ecc71':'#ffd400';x.beginPath();x.moveTo(16,0);x.lineTo(-10,-11);x.lineTo(-10,11);x.fill();x.restore()}}
+  if(msgT>0&&state==='run'){x.font='bold 18px system-ui';x.textAlign='center';const w=x.measureText(msg).width+24;x.fillStyle='rgba(0,0,0,.65)';x.fillRect(VW/2-w/2,14,w,32);x.fillStyle='#fff';x.fillText(msg,VW/2,36)}
+}
+function loop(n){const dt=Math.min(.05,(n-last)/1000);last=n;if(state==='run')upd(dt);
+  document.getElementById('bank').textContent='₦'+bank.toLocaleString();
+  document.getElementById('time').textContent='Shift '+Math.max(0,Math.ceil(shiftT))+'s'+(rain&&state==='run'?' 🌧️':'');
+  document.getElementById('fuel').textContent='⛽ '+Math.round(fuel/FMAX*100)+'%';document.getElementById('ride').textContent=state!=='run'?'Ready?':car.has?'To '+destName+' · ₦'+fare.toLocaleString()+' · '+Math.max(0,Math.ceil(rideT))+'s':'Find the passenger 🧍 · '+Math.round(Math.hypot(pass.x-car.x,pass.y-car.y)/10)+'m';
+  draw();requestAnimationFrame(loop)}
+showOv('Danfo Hustle: Lagos','Drive your danfo through Lagos. Pick up passengers 🧍, drive them to the 🏁, and earn naira. Avoid traffic and potholes, and refuel at ⛽ stations. Arrow keys or WASD to drive. Tap Left or Right for a quick 90° turn at a junction, or hold it to steer freely. Press H or Space to honk. Hawkers 🥤 pay extra if you stop near them with a passenger. Each shift lasts 150 seconds.');
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
